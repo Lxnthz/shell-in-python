@@ -13,6 +13,9 @@ BUILTIN_COMMANDS = ["echo", "exit", "history", "type", "pwd", "cd"]
 # Track history base for append operation
 history_base_for_append = 0
 
+# Manual history list (for reliable history management)
+manual_history = []
+
 
 class ShellCompleter:
     """Auto-completion for commands"""
@@ -218,7 +221,7 @@ def handle_type(args):
 
 def handle_history(args):
     """Handle history command"""
-    global history_base_for_append
+    global history_base_for_append, manual_history
     
     if len(args) > 1:
         flag = args[1]
@@ -230,6 +233,13 @@ def handle_history(args):
                 return
             try:
                 readline.read_history_file(args[2])
+                # Also update manual history
+                manual_history.clear()
+                total = readline.get_current_history_length()
+                for i in range(total):
+                    line = readline.get_history_item(i + 1)
+                    if line:
+                        manual_history.append(line)
             except Exception:
                 print(f"history: {args[2]}: cannot read history file", file=sys.stderr)
         
@@ -239,7 +249,10 @@ def handle_history(args):
                 print("history: -w: option requires an argument", file=sys.stderr)
                 return
             try:
-                readline.write_history_file(args[2])
+                # Write manual history to file
+                with open(args[2], 'w') as f:
+                    for line in manual_history:
+                        f.write(line + '\n')
             except Exception:
                 print(f"history: {args[2]}: cannot write history file", file=sys.stderr)
         
@@ -249,35 +262,31 @@ def handle_history(args):
                 print("history: -a: option requires an argument", file=sys.stderr)
                 return
             
-            current_length = readline.get_current_history_length()
-            new_entries = current_length - history_base_for_append
+            new_entries = len(manual_history) - history_base_for_append
             
             if new_entries > 0:
                 try:
-                    readline.append_history_file(new_entries, args[2])
-                    history_base_for_append = current_length
+                    with open(args[2], 'a') as f:
+                        for i in range(history_base_for_append, len(manual_history)):
+                            f.write(manual_history[i] + '\n')
+                    history_base_for_append = len(manual_history)
                 except Exception:
                     print(f"history: {args[2]}: cannot append to history file", file=sys.stderr)
         
         elif flag.isdigit():
             # Show last n entries
             n = int(flag)
-            total = readline.get_current_history_length()
+            total = len(manual_history)
             start = max(0, total - n)
             
             for i in range(start, total):
-                line = readline.get_history_item(i + 1)
-                if line:
-                    print(f"{i + 1:5d}  {line}")
+                print(f"{i + 1:5d}  {manual_history[i]}")
         else:
             print(f"history: {flag}: invalid option", file=sys.stderr)
     else:
         # Display all history
-        total = readline.get_current_history_length()
-        for i in range(total):
-            line = readline.get_history_item(i + 1)
-            if line:
-                print(f"{i + 1:5d}  {line}")
+        for i, line in enumerate(manual_history):
+            print(f"{i + 1:5d}  {line}")
 
 
 def parse_redirections(args):
@@ -501,6 +510,9 @@ def main():
     # Check if running interactively
     is_interactive = sys.stdin.isatty()
     
+    # Access global manual_history
+    global manual_history
+    
     while True:
         try:
             # Read input
@@ -522,6 +534,7 @@ def main():
             # Add to history only if non-empty (matching C behavior)
             if line:
                 readline.add_history(line)
+                manual_history.append(line)  # Also add to manual history
             
             if not line.strip():
                 continue
