@@ -72,6 +72,8 @@ class ShellCompleter:
 
 def setup_readline():
     """Setup readline with history and completion"""
+    global manual_history
+    
     # Setup completion
     completer = ShellCompleter()
     readline.set_completer(completer.complete)
@@ -85,6 +87,12 @@ def setup_readline():
     if histfile and os.path.exists(histfile):
         try:
             readline.read_history_file(histfile)
+            # Also populate manual_history from the loaded history
+            total = readline.get_current_history_length()
+            for i in range(total):
+                line = readline.get_history_item(i + 1)
+                if line:
+                    manual_history.append(line)
         except Exception:
             pass
     
