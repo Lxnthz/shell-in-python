@@ -501,13 +501,18 @@ def main():
     while True:
         try:
             # Read input
-            line = input("$ ")
+            try:
+                line = input("$ ")
+            except EOFError:
+                print()
+                break
+            
+            # Add to history only if non-empty (matching C behavior)
+            if line:
+                readline.add_history(line)
             
             if not line.strip():
                 continue
-            
-            # Add to history
-            readline.add_history(line)
             
             # Check for pipeline
             if '|' in line:
@@ -574,10 +579,6 @@ def main():
                     append_stderr=append_stderr
                 )
         
-        except EOFError:
-            # Handle Ctrl+D
-            print()
-            break
         except KeyboardInterrupt:
             # Handle Ctrl+C
             print()
