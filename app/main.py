@@ -498,14 +498,26 @@ def main():
     # Flush stdout
     sys.stdout.reconfigure(line_buffering=True)
     
+    # Check if running interactively
+    is_interactive = sys.stdin.isatty()
+    
     while True:
         try:
             # Read input
-            try:
-                line = input("$ ")
-            except EOFError:
-                print()
-                break
+            if is_interactive:
+                try:
+                    line = input("$ ")
+                except EOFError:
+                    print()
+                    break
+            else:
+                # Non-interactive mode (piped input)
+                sys.stdout.write("$ ")
+                sys.stdout.flush()
+                line = sys.stdin.readline()
+                if not line:  # EOF
+                    break
+                line = line.rstrip('\n')
             
             # Add to history only if non-empty (matching C behavior)
             if line:
