@@ -521,8 +521,11 @@ def main():
             
             # Add to history only if non-empty (matching C behavior)
             if line:
-                readline.add_history(line)
-                manual_history.append(line)  # Also add to manual history
+                # Check if it's different from the last history entry to avoid duplicates
+                last_item = readline.get_history_item(readline.get_current_history_length())
+                if not last_item or last_item != line:
+                    readline.add_history(line)
+                manual_history.append(line)  # Always add to manual history
             
             if not line.strip():
                 continue
