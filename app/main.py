@@ -31,7 +31,11 @@ class ShellCompleter:
                 self.matches = []
         
         try:
-            return self.matches[state]
+            match = self.matches[state]
+            # Add trailing space only for single match (readline will auto-complete)
+            if len(self.matches) == 1:
+                return match + " "
+            return match
         except IndexError:
             return None
     
@@ -43,7 +47,7 @@ class ShellCompleter:
         # Check builtin commands
         for cmd in BUILTIN_COMMANDS:
             if cmd.startswith(text):
-                matches.append(cmd + " ")  # Add trailing space
+                matches.append(cmd)
                 seen.add(cmd)
         
         # Check external commands in PATH
@@ -55,7 +59,7 @@ class ShellCompleter:
                         full_path = os.path.join(directory, entry)
                         if entry.startswith(text) and os.access(full_path, os.X_OK):
                             if entry not in seen:
-                                matches.append(entry + " ")  # Add trailing space
+                                matches.append(entry)
                                 seen.add(entry)
             except (PermissionError, OSError):
                 continue
