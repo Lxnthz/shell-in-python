@@ -38,11 +38,13 @@ class ShellCompleter:
     def _get_matches(self, text):
         """Get all matching commands"""
         matches = []
+        seen = set()
         
         # Check builtin commands
         for cmd in BUILTIN_COMMANDS:
             if cmd.startswith(text):
-                matches.append(cmd)
+                matches.append(cmd + " ")  # Add trailing space
+                seen.add(cmd)
         
         # Check external commands in PATH
         path_env = os.environ.get("PATH", "")
@@ -52,8 +54,9 @@ class ShellCompleter:
                     for entry in os.listdir(directory):
                         full_path = os.path.join(directory, entry)
                         if entry.startswith(text) and os.access(full_path, os.X_OK):
-                            if entry not in matches:
-                                matches.append(entry)
+                            if entry not in seen:
+                                matches.append(entry + " ")  # Add trailing space
+                                seen.add(entry)
             except (PermissionError, OSError):
                 continue
         
@@ -66,6 +69,9 @@ def setup_readline():
     completer = ShellCompleter()
     readline.set_completer(completer.complete)
     readline.parse_and_bind("tab: complete")
+    
+    # Set completer delimiters (space is the delimiter for word completion)
+    readline.set_completer_delims(' \t\n')
     
     # Setup history
     histfile = os.environ.get("HISTFILE")
@@ -390,6 +396,17 @@ def execute_pipeline(command_str):
         if not args:
             continue
         
+        # Parse redirections for this command
+        parsed = parse_redirections(args)
+        if parsed is None:
+            continue
+        
+        args = parsed['args']
+        redirect_stdout = parsed['redirect_stdout']
+        redirect_stderr = parsed['redirect_stderr']
+        append_stdout = parsed['append_stdout']
+        append_stderr = parsed['append_stderr']
+        
         # Create pipe for output if not last command
         if i < num_cmds - 1:
             read_pipe, write_pipe = os.pipe()
@@ -406,15 +423,33 @@ def execute_pipeline(command_str):
                     os.dup2(prev_pipe, sys.stdin.fileno())
                     os.close(prev_pipe)
                 
-                # Setup stdout to next pipe
-                if write_pipe is not None:
+                # Setup stdout to next pipe (if no file redirection)
+                if write_pipe is not None and not redirect_stdout:
                     os.dup2(write_pipe, sys.stdout.fileno())
                     os.close(write_pipe)
                     os.close(read_pipe)
+                elif write_pipe is not None:
+                    os.close(write_pipe)
+                    os.close(read_pipe)
+                
+                # Handle file redirections
+                if redirect_stdout:
+                    mode = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if append_stdout else os.O_TRUNC)
+                    fd = os.open(redirect_stdout, mode, 0o644)
+                    os.dup2(fd, sys.stdout.fileno())
+                    os.close(fd)
+                
+                if redirect_stderr:
+                    mode = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if append_stderr else os.O_TRUNC)
+                    fd = os.open(redirect_stderr, mode, 0o644)
+                    os.dup2(fd, sys.stderr.fileno())
+                    os.close(fd)
                 
                 # Handle builtin commands
                 if args[0] == "echo":
-                    handle_echo(args)
+                    # For echo in pipeline, just print to stdout (already redirected if needed)
+                    output = ' '.join(args[1:]) + '\n'
+                    sys.stdout.write(output)
                     sys.exit(0)
                 elif args[0] == "exit":
                     sys.exit(0)
