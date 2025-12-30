@@ -135,9 +135,18 @@ def parse_command(command_str):
     return args
 
 
-def handle_echo(args, redirect_stdout=None, append_stdout=False):
+def handle_echo(args, redirect_stdout=None, append_stdout=False, redirect_stderr=None, append_stderr=False):
     """Handle echo command"""
     output = ' '.join(args[1:]) + '\n'
+    
+    # Handle stderr redirection (just open the file, echo doesn't write to stderr)
+    if redirect_stderr:
+        mode = 'a' if append_stderr else 'w'
+        try:
+            with open(redirect_stderr, mode) as f:
+                pass  # Just create/truncate the file
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
     
     if redirect_stdout:
         mode = 'a' if append_stdout else 'w'
@@ -502,7 +511,7 @@ def main():
                     sys.exit(0)
             
             elif args[0] == "echo":
-                handle_echo(args, redirect_stdout, append_stdout)
+                handle_echo(args, redirect_stdout, append_stdout, redirect_stderr, append_stderr)
             
             elif args[0] == "pwd":
                 handle_pwd()
