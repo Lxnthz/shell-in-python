@@ -8,4 +8,4 @@
 
 set -e # Exit on failure
 
-exec .venv/bin/python -m app.main "$@"
+exec env PYTHONPATH="/app:$PYTHONPATH" /usr/local/bin/python -m app.main "$@"
