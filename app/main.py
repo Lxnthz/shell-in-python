@@ -78,9 +78,12 @@ def main():
         print(); break
 
       if line:
-        last = readline.get_history_item(readline.get_current_history_length())
+        last = state.manual_history[-1] if state.manual_history else None
         if not last or last != line:
-          readline.add_history(line)
+          try:
+            readline.add_history(line)
+          except NameError:
+            pass
         state.manual_history.append(line)
 
       if not line.strip():
