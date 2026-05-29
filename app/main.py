@@ -3,12 +3,12 @@ import atexit
 import sys
 import os
 import readline
-from .lib import state
-from .lib.builtins import (handle_echo, handle_cd, handle_pwd, handle_type, handle_history, handle_declare)
-from .lib.parser import parse_command, parse_redirection
-from .lib.executor import execute_command, execute_pipeline
-from .lib.jobs import handle_jobs, start_background_job, reap_jobs
-from .lib.completion import ShellCompleter, handle_complete
+from .libs import state
+from .libs.builtins import (handle_echo, handle_cd, handle_pwd, handle_type, handle_history, handle_declare)
+from .libs.parser import parse_command, parse_redirection
+from .libs.executor import execute_command, execute_pipeline
+from .libs.jobs import handle_jobs, start_background_job, reap_jobs
+from .libs.completion import ShellCompleter, handle_complete
 
 def setup_readline():
   completer = ShellCompleter()
