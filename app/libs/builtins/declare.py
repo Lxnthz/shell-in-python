@@ -20,7 +20,7 @@ def handle_declare(args):
       print("declare: no variables set", file=sys.stderr)
     else:
       for k, v in sorted(state.shell_variables.items()):
-        print(f"declare -- {k}={v!s}")
+        print(f"declare -- {k}=\"{v}\"")
     return
 
   # -p flag
@@ -30,11 +30,11 @@ def handle_declare(args):
         print("declare: no variables set", file=sys.stderr)
       else:
         for k, v in sorted(state.shell_variables.items()):
-          print(f"declare -- {k}={v!s}")
+          print(f"declare -- {k}=\"{v}\"")
     else:
       name = args[2]
       if name in state.shell_variables:
-        print(f"declare -- {name}={state.shell_variables[name]!s}")
+        print(f"declare -- {name}=\"{state.shell_variables[name]}\"")
       else:
         print(f"declare: {name}: not found", file=sys.stderr)
     return
@@ -55,4 +55,4 @@ def handle_declare(args):
       if name not in state.shell_variables:
         print(f"declare: `{name}`: not found", file=sys.stderr)
       else:
-        print(f"declare -- {name}={state.shell_variables[name]!s}")
+        print(f"declare -- {name}=\"{state.shell_variables[name]}\"")
