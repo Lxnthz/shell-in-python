@@ -44,13 +44,13 @@ def handle_declare(args):
     if '=' in token:
       name, _, value = token.partition('=')
       if not _VALID_NAME.match(name):
-        print(f"declare: `{name}`: not a valid identifier", file=sys.stderr)
+        print(f"declare: `{value}={name}`: not a valid identifier", file=sys.stderr)
         continue
       state.shell_variables[name] = value
     else:
       name = token
       if not _VALID_NAME.match(name):
-        print(f"declare: `{name}`: not a valid identifier", file=sys.stderr)
+        print(f"declare: `{value}={name}`: not a valid identifier", file=sys.stderr)
         continue
       if name not in state.shell_variables:
         print(f"declare: `{name}`: not found", file=sys.stderr)
