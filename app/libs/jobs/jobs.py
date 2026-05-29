@@ -19,9 +19,12 @@ def start_background_job(args: list[str]) -> int:
       os.execvp(args[0], args)
     except Exception:
       print(f"{args[0]}: command not found", file=sys.stderr)
-      os.exit(127)
+      os._exit(127)
   else:
-    os.setpgid(pid, pid)
+    try:
+      os.setpgid(pid, pid)
+    except PermissionError:
+      pass
     cmd_str = " ".join(args) + " &"
     state.jobs[job_num] = {"pid": pid, "cmd": cmd_str, "status": "running"}
     print(f"[{job_num}] {pid}")
