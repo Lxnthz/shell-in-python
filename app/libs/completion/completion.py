@@ -163,10 +163,10 @@ class ShellCompleter:
         try:
           env = os.environ.copy()
           env.update(spec.get("env", {}))
-          env["COMP_WORDS"] = " ".join(tokens)
-          env["COMP_CWORD"] = str(len(tokens) - 1)
+          # Bash passes: $1=cmd, $2=current word, $3=previous word
+          prev_word = tokens[-1] if not text else (tokens[-2] if len(tokens) >= 2 else "")
           out = subprocess.check_output(
-              [value] + tokens, env=env, text=True, stderr=subprocess.DEVNULL
+              [value, tokens[0], text, prev_word], env=env, text=True, stderr=subprocess.DEVNULL
           )
           results.extend(w for w in out.split() if w.startswith(text))
         except Exception:
