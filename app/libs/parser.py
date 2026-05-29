@@ -21,12 +21,14 @@ def parse_command(command_str: str) -> list[str]:
   args = []
   current: list[str] = []
   in_sq = in_dq = False
+  token_started = False
   i = 0
 
   while i < len(command_str):
     ch = command_str[i]
 
     if ch == '\\' and not in_sq:
+      token_started = True
       if in_dq:
         if i + 1 < len(command_str) and command_str[i + 1] in ('"', '\\', '$', '\n'):
           current.append(command_str[i + 1])
@@ -42,28 +44,34 @@ def parse_command(command_str: str) -> list[str]:
           current.append('\\')
           i += 1
     elif ch == "'" and not in_dq:
+      token_started = True
       in_sq = not in_sq; i += 1
     elif ch == '"' and not in_sq:
+      token_started = True
       in_dq = not in_dq; i += 1
     elif ch == '$' and not in_sq:
       m = re.match(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)', command_str[i:])
       if m:
         name = m.group(1) or m.group(2)
         val = state.shell_variables.get(name, os.environ.get(name, ""))
-        current.append(val)
+        if val:
+          current.append(val)
+          token_started = True
         i += len(m.group(0))
       else:
-        current.append(ch); i += 1
+        current.append(ch); token_started = True; i += 1
     elif ch.isspace() and not in_sq and not in_dq:
-      if current:
+      if token_started:
         args.append(''.join(current))
         current = []
+        token_started = False
       i += 1
     else:
       current.append(ch)
+      token_started = True
       i += 1
   
-  if current:
+  if token_started:
     args.append(''.join(current))
   
   return args
