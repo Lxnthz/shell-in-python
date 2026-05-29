@@ -22,7 +22,8 @@ def start_background_job(args: list[str]) -> int:
       os.exit(127)
   else:
     os.setpgid(pid, pid)
-    state.jobs[job_num] = {"pid": pid, "cmd": " ".join(args), "status": "running"}
+    cmd_str = " ".join(args) + " &"
+    state.jobs[job_num] = {"pid": pid, "cmd": cmd_str, "status": "running"}
     print(f"[{job_num}] {pid}")
     return job_num
 
@@ -41,7 +42,7 @@ def reap_jobs():
 
   for num in sorted(finished):
     info = state.jobs[num]
-    print(f"\n[{num}]+ Done                {info['cmd']}")
+    print(f"\n[{num}]+ Done                    {info['cmd']}")
   
   for num in finished:
     del state.jobs[num]
@@ -58,15 +59,16 @@ def handle_jobs(args: list[str]):
     if target.isdigit():
       n = int(target)
       if n in state.jobs:
-        _print_job(n, state.jobs[n], is_last=(n == nums[-1]))
+        marker = '+' if n == nums[-1] else ('-' if len(nums) > 1 and n == nums[-2] else ' ')
+        _print_job(n, state.jobs[n], marker)
       else:
         print(f"jobs: {args[1]}: no such job", file=sys.stderr)
       return
 
   for n in nums:
-    _print_job(n, state.jobs[n], is_last=(n == nums[-1]))
+    marker = '+' if n == nums[-1] else ('-' if len(nums) > 1 and n == nums[-2] else ' ')
+    _print_job(n, state.jobs[n], marker)
 
-def _print_job(num, info, is_last=False):
-  marker = '+' if is_last else '-'
+def _print_job(num, info, marker):
   status = info["status"].capitalize()
-  print(f"[{num}]{marker}  {status:<20} {info['cmd']}")
+  print(f"[{num}]{marker}  {status:<24} {info['cmd']}")
