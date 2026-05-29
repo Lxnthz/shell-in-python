@@ -8,4 +8,4 @@
 
 set -e # Exit on failure
 
-exec uv run --quiet -m app.main "$@"
+exec .venv/bin/python -m app.main "$@"
