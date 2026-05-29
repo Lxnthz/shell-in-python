@@ -82,7 +82,7 @@ def main():
         if not last or last != line:
           try:
             readline.add_history(line)
-          except NameError:
+          except Exception:
             pass
         state.manual_history.append(line)
 
