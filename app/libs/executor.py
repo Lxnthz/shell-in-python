@@ -28,7 +28,7 @@ def execute_command(args, redirect_stdout=None, redirect_stderr=None, append_std
       stderr_arg.close()
 
     return result.returncode
-  except FileExistsError:
+  except FileNotFoundError:
     print(f"{args[0]}: command not found", file=sys.stderr)
     return 127
   except Exception as e:
