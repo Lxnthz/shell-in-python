@@ -1,615 +1,134 @@
+"""Shell entry point"""
+import atexit
 import sys
 import os
-import subprocess
-import shlex
 import readline
-import atexit
-from pathlib import Path
-
-
-# Builtin commands
-BUILTIN_COMMANDS = ["echo", "exit", "history", "type", "pwd", "cd"]
-
-# Track history base for append operation
-history_base_for_append = 0
-
-# Manual history list (for reliable history management)
-manual_history = []
-
-
-class ShellCompleter:
-    """Auto-completion for commands"""
-    
-    def __init__(self):
-        self.matches = []
-    
-    def complete(self, text, state):
-        """Generate completions for text"""
-        if state == 0:
-            # Only complete the first word (command)
-            line = readline.get_line_buffer()
-            if line.startswith(text):
-                self.matches = self._get_matches(text)
-            else:
-                self.matches = []
-        
-        try:
-            match = self.matches[state]
-            # Add trailing space only for single match (readline will auto-complete)
-            if len(self.matches) == 1:
-                return match + " "
-            return match
-        except IndexError:
-            return None
-    
-    def _get_matches(self, text):
-        """Get all matching commands"""
-        matches = []
-        seen = set()
-        
-        # Check builtin commands
-        for cmd in BUILTIN_COMMANDS:
-            if cmd.startswith(text):
-                matches.append(cmd)
-                seen.add(cmd)
-        
-        # Check external commands in PATH
-        path_env = os.environ.get("PATH", "")
-        for directory in path_env.split(os.pathsep):
-            try:
-                if os.path.isdir(directory):
-                    for entry in os.listdir(directory):
-                        full_path = os.path.join(directory, entry)
-                        if entry.startswith(text) and os.access(full_path, os.X_OK):
-                            if entry not in seen:
-                                matches.append(entry)
-                                seen.add(entry)
-            except (PermissionError, OSError):
-                continue
-        
-        return sorted(matches)
-
+from .lib import state
+from .lib.builtins import (handle_echo, handle_cd, handle_pwd, handle_type, handle_history, handle_declare)
+from .lib.parser import parse_command, parse_redirection
+from .lib.executor import execute_command, execute_pipeline
+from .lib.jobs import handle_jobs, start_background_job, reap_jobs
+from .lib.completion import ShellCompleter, handle_complete
 
 def setup_readline():
-    """Setup readline with history and completion"""
-    global manual_history
-    
-    # Setup completion
-    completer = ShellCompleter()
-    readline.set_completer(completer.complete)
-    readline.parse_and_bind("tab: complete")
-    
-    # Set completer delimiters (space is the delimiter for word completion)
-    readline.set_completer_delims(' \t\n')
-    
-    # Setup history
+  completer = ShellCompleter()
+  readline.set_completer(completer.complete)
+  readline.parse_and_bind("tab: complete")
+  readline.set_completer_delims(' \t\n')
+
+  histfile = os.environ.get("HISTFILE")
+  if histfile and os.path.exists(histfile):
+    try:
+      readline.read_history_file(histfile)
+      for i in range(readline.get_current_history_length()):
+        line = readline.get_history_items(i + 1)
+        if line:
+          state.manual_history.append(line)
+    except Exception as e:
+      pass
+
+  def save_history():
+    if histfile:
+      try:
+        readline.write_history_file(histfile)
+      except Exception:
+        pass
+  
+  atexit.register(save_history)
+
+def run_builtin(args, parsed):
+  """Dispatch to builtin; return True if handled"""
+  cmd = args[0]
+  rs = parsed['redirect_stdout']
+  as_ = parsed['append_stdout']
+  re_ = parsed['redirect_stderr']
+  ae = parsed['append_stderr']
+
+  if cmd == "exit":
     histfile = os.environ.get("HISTFILE")
-    if histfile and os.path.exists(histfile):
-        try:
-            readline.read_history_file(histfile)
-            # Also populate manual_history from the loaded history
-            total = readline.get_current_history_length()
-            for i in range(total):
-                line = readline.get_history_item(i + 1)
-                if line:
-                    manual_history.append(line)
-        except Exception:
-            pass
-    
-    # Save history on exit
-    def save_history():
-        if histfile:
-            try:
-                readline.write_history_file(histfile)
-            except Exception:
-                pass
-    
-    atexit.register(save_history)
-
-
-def parse_command(command_str):
-    """Parse command string handling quotes and escapes"""
-    args = []
-    current_arg = []
-    in_single_quote = False
-    in_double_quote = False
-    i = 0
-    
-    while i < len(command_str):
-        char = command_str[i]
-        
-        if char == '\\' and not in_single_quote:
-            # Handle backslash escaping
-            if in_double_quote:
-                # In double quotes, only escape certain characters
-                if i + 1 < len(command_str) and command_str[i + 1] in ['"', '\\']:
-                    current_arg.append(command_str[i + 1])
-                    i += 2
-                    continue
-                else:
-                    current_arg.append('\\')
-                    i += 1
-            else:
-                # Outside quotes, escape next character
-                if i + 1 < len(command_str):
-                    current_arg.append(command_str[i + 1])
-                    i += 2
-                    continue
-        elif char == "'" and not in_double_quote:
-            in_single_quote = not in_single_quote
-            i += 1
-        elif char == '"' and not in_single_quote:
-            in_double_quote = not in_double_quote
-            i += 1
-        elif char.isspace() and not in_single_quote and not in_double_quote:
-            if current_arg:
-                args.append(''.join(current_arg))
-                current_arg = []
-            i += 1
-        else:
-            current_arg.append(char)
-            i += 1
-    
-    if current_arg:
-        args.append(''.join(current_arg))
-    
-    return args
-
-
-def handle_echo(args, redirect_stdout=None, append_stdout=False, redirect_stderr=None, append_stderr=False):
-    """Handle echo command"""
-    output = ' '.join(args[1:]) + '\n'
-    
-    # Handle stderr redirection (just open the file, echo doesn't write to stderr)
-    if redirect_stderr:
-        mode = 'a' if append_stderr else 'w'
-        try:
-            with open(redirect_stderr, mode) as f:
-                pass  # Just create/truncate the file
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-    
-    if redirect_stdout:
-        mode = 'a' if append_stdout else 'w'
-        try:
-            with open(redirect_stdout, mode) as f:
-                f.write(output)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-    else:
-        sys.stdout.write(output)
-
-
-def handle_pwd():
-    """Handle pwd command"""
-    print(os.getcwd())
-
-
-def handle_cd(args):
-    """Handle cd command"""
-    if len(args) < 2:
-        print("cd: missing argument", file=sys.stderr)
-        return
-    
-    path = args[1]
-    if path == "~":
-        path = os.environ.get("HOME", os.path.expanduser("~"))
-    
-    try:
-        os.chdir(path)
-    except FileNotFoundError:
-        print(f"cd: {path}: No such file or directory", file=sys.stderr)
-    except Exception as e:
-        print(f"cd: {e}", file=sys.stderr)
-
-
-def handle_type(args):
-    """Handle type command"""
-    if len(args) < 2:
-        print("type: missing file operand", file=sys.stderr)
-        return
-    
-    cmd = args[1]
-    
-    # Check if builtin
-    if cmd in BUILTIN_COMMANDS:
-        print(f"{cmd} is a shell builtin")
-        return
-    
-    # Check in PATH
-    path_env = os.environ.get("PATH", "")
-    for directory in path_env.split(os.pathsep):
-        full_path = os.path.join(directory, cmd)
-        if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
-            print(f"{cmd} is {full_path}")
-            return
-    
-    print(f"{cmd}: not found", file=sys.stderr)
-
-
-def handle_history(args):
-    """Handle history command"""
-    global history_base_for_append, manual_history
-    
-    if len(args) > 1:
-        flag = args[1]
-        
-        if flag == "-r":
-            # Read history from file
-            if len(args) < 3:
-                print("history: -r: option requires an argument", file=sys.stderr)
-                return
-            try:
-                readline.read_history_file(args[2])
-                # Also update manual history
-                manual_history.clear()
-                total = readline.get_current_history_length()
-                for i in range(total):
-                    line = readline.get_history_item(i + 1)
-                    if line:
-                        manual_history.append(line)
-            except Exception:
-                print(f"history: {args[2]}: cannot read history file", file=sys.stderr)
-        
-        elif flag == "-w":
-            # Write history to file
-            if len(args) < 3:
-                print("history: -w: option requires an argument", file=sys.stderr)
-                return
-            try:
-                # Write manual history to file
-                with open(args[2], 'w') as f:
-                    for line in manual_history:
-                        f.write(line + '\n')
-            except Exception:
-                print(f"history: {args[2]}: cannot write history file", file=sys.stderr)
-        
-        elif flag == "-a":
-            # Append new history to file
-            if len(args) < 3:
-                print("history: -a: option requires an argument", file=sys.stderr)
-                return
-            
-            new_entries = len(manual_history) - history_base_for_append
-            
-            if new_entries > 0:
-                try:
-                    with open(args[2], 'a') as f:
-                        for i in range(history_base_for_append, len(manual_history)):
-                            f.write(manual_history[i] + '\n')
-                    history_base_for_append = len(manual_history)
-                except Exception:
-                    print(f"history: {args[2]}: cannot append to history file", file=sys.stderr)
-        
-        elif flag.isdigit():
-            # Show last n entries
-            n = int(flag)
-            total = len(manual_history)
-            start = max(0, total - n)
-            
-            for i in range(start, total):
-                print(f"{i + 1:5d}  {manual_history[i]}")
-        else:
-            print(f"history: {flag}: invalid option", file=sys.stderr)
-    else:
-        # Display all history
-        for i, line in enumerate(manual_history):
-            print(f"{i + 1:5d}  {line}")
-
-
-def parse_redirections(args):
-    """Parse redirection operators from args"""
-    redirect_stdout = None
-    redirect_stderr = None
-    append_stdout = False
-    append_stderr = False
-    clean_args = []
-    
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        
-        if arg in [">", "1>"]:
-            if i + 1 < len(args):
-                redirect_stdout = args[i + 1]
-                append_stdout = False
-                i += 2
-                continue
-            else:
-                print(f"syntax error: expected file after '{arg}'", file=sys.stderr)
-                return None
-        
-        elif arg in [">>", "1>>"]:
-            if i + 1 < len(args):
-                redirect_stdout = args[i + 1]
-                append_stdout = True
-                i += 2
-                continue
-            else:
-                print(f"syntax error: expected file after '{arg}'", file=sys.stderr)
-                return None
-        
-        elif arg == "2>":
-            if i + 1 < len(args):
-                redirect_stderr = args[i + 1]
-                append_stderr = False
-                i += 2
-                continue
-            else:
-                print(f"syntax error: expected file after '{arg}'", file=sys.stderr)
-                return None
-        
-        elif arg == "2>>":
-            if i + 1 < len(args):
-                redirect_stderr = args[i + 1]
-                append_stderr = True
-                i += 2
-                continue
-            else:
-                print(f"syntax error: expected file after '{arg}'", file=sys.stderr)
-                return None
-        
-        clean_args.append(arg)
-        i += 1
-    
-    return {
-        'args': clean_args,
-        'redirect_stdout': redirect_stdout,
-        'redirect_stderr': redirect_stderr,
-        'append_stdout': append_stdout,
-        'append_stderr': append_stderr
-    }
-
-
-def execute_command(args, redirect_stdout=None, redirect_stderr=None, 
-                   append_stdout=False, append_stderr=False,
-                   stdin_pipe=None, stdout_pipe=None):
-    """Execute external command"""
-    try:
-        # Setup stdin/stdout for piping
-        stdin_arg = stdin_pipe if stdin_pipe else None
-        stdout_arg = stdout_pipe if stdout_pipe else None
-        stderr_arg = None
-        
-        # Handle file redirections
-        if redirect_stdout and not stdout_pipe:
-            mode = 'a' if append_stdout else 'w'
-            stdout_arg = open(redirect_stdout, mode)
-        
-        if redirect_stderr:
-            mode = 'a' if append_stderr else 'w'
-            stderr_arg = open(redirect_stderr, mode)
-        
-        result = subprocess.run(
-            args,
-            stdin=stdin_arg,
-            stdout=stdout_arg if stdout_arg else None,
-            stderr=stderr_arg if stderr_arg else None,
-            text=True
-        )
-        
-        # Close file handles if we opened them
-        if redirect_stdout and stdout_arg and not stdout_pipe:
-            stdout_arg.close()
-        if redirect_stderr and stderr_arg:
-            stderr_arg.close()
-        
-        return result.returncode
-    
-    except FileNotFoundError:
-        print(f"{args[0]}: command not found", file=sys.stderr)
-        return 127
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-
-
-def execute_pipeline(command_str):
-    """Execute pipeline of commands"""
-    commands = [cmd.strip() for cmd in command_str.split('|')]
-    num_cmds = len(commands)
-    
-    processes = []
-    prev_pipe = None
-    
-    for i, cmd in enumerate(commands):
-        args = parse_command(cmd)
-        if not args:
-            continue
-        
-        # Parse redirections for this command
-        parsed = parse_redirections(args)
-        if parsed is None:
-            continue
-        
-        args = parsed['args']
-        redirect_stdout = parsed['redirect_stdout']
-        redirect_stderr = parsed['redirect_stderr']
-        append_stdout = parsed['append_stdout']
-        append_stderr = parsed['append_stderr']
-        
-        # Create pipe for output if not last command
-        if i < num_cmds - 1:
-            read_pipe, write_pipe = os.pipe()
-        else:
-            read_pipe, write_pipe = None, None
-        
-        pid = os.fork()
-        
-        if pid == 0:
-            # Child process
-            try:
-                # Setup stdin from previous pipe
-                if prev_pipe is not None:
-                    os.dup2(prev_pipe, sys.stdin.fileno())
-                    os.close(prev_pipe)
-                
-                # Setup stdout to next pipe (if no file redirection)
-                if write_pipe is not None and not redirect_stdout:
-                    os.dup2(write_pipe, sys.stdout.fileno())
-                    os.close(write_pipe)
-                    os.close(read_pipe)
-                elif write_pipe is not None:
-                    os.close(write_pipe)
-                    os.close(read_pipe)
-                
-                # Handle file redirections
-                if redirect_stdout:
-                    mode = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if append_stdout else os.O_TRUNC)
-                    fd = os.open(redirect_stdout, mode, 0o644)
-                    os.dup2(fd, sys.stdout.fileno())
-                    os.close(fd)
-                
-                if redirect_stderr:
-                    mode = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if append_stderr else os.O_TRUNC)
-                    fd = os.open(redirect_stderr, mode, 0o644)
-                    os.dup2(fd, sys.stderr.fileno())
-                    os.close(fd)
-                
-                # Handle builtin commands
-                if args[0] == "echo":
-                    # For echo in pipeline, just print to stdout (already redirected if needed)
-                    output = ' '.join(args[1:]) + '\n'
-                    sys.stdout.write(output)
-                    sys.exit(0)
-                elif args[0] == "exit":
-                    sys.exit(0)
-                elif args[0] == "pwd":
-                    handle_pwd()
-                    sys.exit(0)
-                elif args[0] == "cd":
-                    handle_cd(args)
-                    sys.exit(0)
-                elif args[0] == "type":
-                    handle_type(args)
-                    sys.exit(0)
-                elif args[0] == "history":
-                    handle_history(args)
-                    sys.exit(0)
-                else:
-                    # Execute external command
-                    os.execvp(args[0], args)
-            except Exception as e:
-                print(f"{args[0]}: command not found", file=sys.stderr)
-                sys.exit(127)
-        
-        # Parent process
-        if prev_pipe is not None:
-            os.close(prev_pipe)
-        
-        if write_pipe is not None:
-            os.close(write_pipe)
-        
-        prev_pipe = read_pipe
-        processes.append(pid)
-    
-    # Wait for all processes
-    for pid in processes:
-        os.waitpid(pid, 0)
-
+    if histfile:
+      try:
+        readline.write_history_file(histfile)
+      except Exception:
+        pass
+    sys.exit(int(args[1]) if len(args) > 1 else 0)
+  elif cmd == "echo":    handle_echo(args, rs, as_, re_, ae)
+  elif cmd == "pwd":     handle_pwd()
+  elif cmd == "cd":      handle_cd(args)
+  elif cmd == "type":    handle_type(args)
+  elif cmd == "history": handle_history(args)
+  elif cmd == "declare": handle_declare(args)
+  elif cmd == "jobs":    handle_jobs(args)
+  elif cmd == "complete": handle_complete(args)
+  else:
+    return False
+  
+  return True
 
 def main():
-    # Setup readline
-    setup_readline()
-    
-    # Flush stdout
-    sys.stdout.reconfigure(line_buffering=True)
-    
-    # Access global manual_history
-    global manual_history
-    
-    while True:
-        try:
-            # Read input using input() which integrates with readline
-            try:
-                line = input("$ ")
-            except EOFError:
-                print()
-                break
-            
-            # Add to history only if non-empty (matching C behavior)
-            if line:
-                # Check if it's different from the last history entry to avoid duplicates
-                last_item = readline.get_history_item(readline.get_current_history_length())
-                if not last_item or last_item != line:
-                    readline.add_history(line)
-                manual_history.append(line)  # Always add to manual history
-            
-            if not line.strip():
-                continue
-            
-            # Check for pipeline
-            if '|' in line:
-                execute_pipeline(line)
-                continue
-            
-            # Parse command
-            args = parse_command(line)
-            if not args:
-                continue
-            
-            # Parse redirections
-            parsed = parse_redirections(args)
-            if parsed is None:
-                continue
-            
-            args = parsed['args']
-            redirect_stdout = parsed['redirect_stdout']
-            redirect_stderr = parsed['redirect_stderr']
-            append_stdout = parsed['append_stdout']
-            append_stderr = parsed['append_stderr']
-            
-            # Handle builtin commands
-            if args[0] == "exit":
-                # Save history
-                histfile = os.environ.get("HISTFILE")
-                if histfile:
-                    try:
-                        readline.write_history_file(histfile)
-                    except Exception:
-                        pass
-                
-                # Exit with code if provided
-                if len(args) > 1:
-                    try:
-                        sys.exit(int(args[1]))
-                    except ValueError:
-                        sys.exit(0)
-                else:
-                    sys.exit(0)
-            
-            elif args[0] == "echo":
-                handle_echo(args, redirect_stdout, append_stdout, redirect_stderr, append_stderr)
-            
-            elif args[0] == "pwd":
-                handle_pwd()
-            
-            elif args[0] == "cd":
-                handle_cd(args)
-            
-            elif args[0] == "type":
-                handle_type(args)
-            
-            elif args[0] == "history":
-                handle_history(args)
-            
-            else:
-                # Execute external command
-                execute_command(
-                    args,
-                    redirect_stdout=redirect_stdout,
-                    redirect_stderr=redirect_stderr,
-                    append_stdout=append_stdout,
-                    append_stderr=append_stderr
-                )
-        
-        except KeyboardInterrupt:
-            # Handle Ctrl+C
-            print()
-            continue
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+  setup_readline()
+  sys.stdout.reconfigure(line_buffering=True)
 
+  while True:
+    try:
+      reap_jobs()  # collect finished background jobs before each prompt
 
+      try:
+        line = input("$ ")
+      except EOFError:
+        print(); break
+
+      if line:
+        last = readline.get_history_item(readline.get_current_history_length())
+        if not last or last != line:
+          readline.add_history(line)
+        state.manual_history.append(line)
+
+      if not line.strip():
+        continue
+
+      # Background job: strip trailing &
+      background = line.rstrip().endswith('&')
+      if background:
+        line = line.rstrip()[:-1].rstrip()
+
+      # Pipeline
+      if '|' in line:
+        execute_pipeline(line)
+        continue
+
+      args = parse_command(line)
+      if not args:
+        continue
+
+      parsed = parse_redirection(args)
+      if parsed is None:
+        continue
+      args = parsed['args']
+      if not args:
+        continue
+
+      if background:
+        start_background_job(args)
+        continue
+
+      if not run_builtin(args, parsed):
+        execute_command(
+          args,
+          redirect_stdout=parsed['redirect_stdout'],
+          redirect_stderr=parsed['redirect_stderr'],
+          append_stdout=parsed['append_stdout'],
+          append_stderr=parsed['append_stderr'],
+        )
+
+    except KeyboardInterrupt:
+      print()
+    except Exception as e:
+      print(f"Error: {e}", file=sys.stderr)
+
+ 
 if __name__ == "__main__":
-    main()
+  main()
+    
+
+  
