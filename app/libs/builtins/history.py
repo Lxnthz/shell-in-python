@@ -10,12 +10,12 @@ def handle_history(args):
         print("history: -r: option requires an argument", file=sys.stderr)
         return
       try:
-        readline.read_history_file(args[2])
-        state.manual_history.clear()
-        for i in range(readline.get_current_history_length()):
-          line = readline.get_history_items(i + 1)
-          if line:
-            state.manual_history.append(line)
+        with open(args[2], 'r', errors='replace') as f:
+          state.manual_history.clear()
+          for raw in f:
+            entry = raw.rstrip('\n')
+            if entry:
+              state.manual_history.append(entry)
       except Exception:
         print(f"history: {args[2]}: cannot read history file", file=sys.stderr)
     
