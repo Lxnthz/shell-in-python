@@ -165,6 +165,12 @@ class ShellCompleter:
           env.update(spec.get("env", {}))
           # Bash passes: $1=cmd, $2=current word, $3=previous word
           prev_word = tokens[-1] if not text else (tokens[-2] if len(tokens) >= 2 else "")
+          
+          # Add COMP_LINE and COMP_POINT
+          line_buf = readline.get_line_buffer()
+          env["COMP_LINE"] = line_buf
+          env["COMP_POINT"] = str(readline.get_endidx() if hasattr(readline, 'get_endidx') else len(line_buf))
+          
           out = subprocess.check_output(
               [value, tokens[0], text, prev_word], env=env, text=True, stderr=subprocess.DEVNULL
           )
