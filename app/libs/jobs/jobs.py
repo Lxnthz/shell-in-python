@@ -27,31 +27,30 @@ def start_background_job(args: list[str]) -> int:
     print(f"[{job_num}] {pid}")
     return job_num
 
-def reap_jobs():
-  finished = []
-  for num, info in list(state.jobs.items()):
+def _update_job_status():
+  for num, info in state.jobs.items():
     if info["status"] == "running":
       try:
         wpid, wstatus = os.waitpid(info["pid"], os.WNOHANG)
         if wpid != 0:
           info["status"] = "done"
-          finished.append(num)
       except ChildProcessError:
         info["status"] = "done"
-        finished.append(num)
 
+def reap_jobs():
+  _update_job_status()
+  finished = [num for num, info in state.jobs.items() if info["status"] == "done"]
   for num in sorted(finished):
     info = state.jobs[num]
     cmd = info['cmd']
     if cmd.endswith(' &'):
       cmd = cmd[:-2]
     print(f"[{num}]+  Done                 {cmd}")
-  
   for num in finished:
     del state.jobs[num]
 
 def handle_jobs(args: list[str]):
-  reap_jobs()
+  _update_job_status()
   if not state.jobs:
     return
   
@@ -64,6 +63,8 @@ def handle_jobs(args: list[str]):
       if n in state.jobs:
         marker = '+' if n == nums[-1] else ('-' if len(nums) > 1 and n == nums[-2] else ' ')
         _print_job(n, state.jobs[n], marker)
+        if state.jobs[n]["status"] == "done":
+          del state.jobs[n]
       else:
         print(f"jobs: {args[1]}: no such job", file=sys.stderr)
       return
@@ -71,7 +72,15 @@ def handle_jobs(args: list[str]):
   for n in nums:
     marker = '+' if n == nums[-1] else ('-' if len(nums) > 1 and n == nums[-2] else ' ')
     _print_job(n, state.jobs[n], marker)
+  
+  # Delete done jobs after printing
+  for n in nums:
+    if state.jobs.get(n, {}).get("status") == "done":
+      del state.jobs[n]
 
 def _print_job(num, info, marker):
   status = info["status"].capitalize()
-  print(f"[{num}]{marker}  {status:<24} {info['cmd']}")
+  cmd = info['cmd']
+  if status == "Done" and cmd.endswith(' &'):
+    cmd = cmd[:-2]
+  print(f"[{num}]{marker}  {status:<24} {cmd}")
