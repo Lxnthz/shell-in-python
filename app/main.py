@@ -17,16 +17,13 @@ def setup_readline():
   readline.set_completer_delims(' \t\n')
 
   histfile = os.environ.get("HISTFILE")
-  history_start_len = 0
   if histfile and os.path.exists(histfile):
     try:
       with open(histfile, 'r', errors='replace') as f:
         for raw in f:
           entry = raw.rstrip('\n')
           if entry:
-            readline.add_history(entry)
             state.manual_history.append(entry)
-      history_start_len = readline.get_current_history_length()
       state.history_base_for_append = len(state.manual_history)
     except Exception:
       pass
@@ -34,14 +31,11 @@ def setup_readline():
   def save_history():
     if histfile:
       try:
-        total = readline.get_current_history_length()
-        new_count = total - history_start_len
-        if new_count > 0:
+        new_cmds = state.manual_history[state.history_base_for_append:]
+        if new_cmds:
           with open(histfile, 'a') as f:
-            for i in range(history_start_len + 1, total + 1):
-              entry = readline.get_history_item(i)
-              if entry:
-                f.write(entry + '\n')
+            for cmd in new_cmds:
+              f.write(cmd + '\n')
       except Exception:
         pass
 
