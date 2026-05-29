@@ -42,7 +42,10 @@ def reap_jobs():
 
   for num in sorted(finished):
     info = state.jobs[num]
-    print(f"\n[{num}]+ Done                    {info['cmd']}")
+    cmd = info['cmd']
+    if cmd.endswith(' &'):
+      cmd = cmd[:-2]
+    print(f"[{num}]+  Done                 {cmd}")
   
   for num in finished:
     del state.jobs[num]
