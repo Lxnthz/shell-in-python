@@ -97,7 +97,7 @@ def handle_complete(args: list[str]):
   i = 1
   while i < len(args):
     flag = args[i]
-    if flag in ("-F", "-A", "-W"):
+    if flag in ("-F", "-C", "-A", "-W"):
       if i + 1 >= len(args):
         print(f"complete: {flag}: option requires an argument", file=sys.stderr); return
       spec["flags"].append((flag, args[i + 1])); i += 2
@@ -113,7 +113,7 @@ def handle_complete(args: list[str]):
   
  
 def _print_spec(cmd: str, spec: dict):
-  flags_str = " ".join(f"{f} {v}" for f, v in spec.get("flags", []))
+  flags_str = " ".join(f"{f} '{v}'" for f, v in spec.get("flags", []))
   print(f"complete {flags_str} {cmd}")
  
  
@@ -158,7 +158,7 @@ class ShellCompleter:
     results: list[str] = []
 
     for flag, value in spec.get("flags", []):
-      if flag == "-F":
+      if flag in ("-F", "-C"):
         # Call external completer script/function
         try:
           env = os.environ.copy()
