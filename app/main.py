@@ -15,6 +15,10 @@ def setup_readline():
   readline.set_completer(completer.complete)
   readline.parse_and_bind("tab: complete")
   readline.set_completer_delims(' \t\n')
+  try:
+    readline.set_auto_history(False)
+  except AttributeError:
+    pass
 
   histfile = os.environ.get("HISTFILE")
   if histfile and os.path.exists(histfile):
