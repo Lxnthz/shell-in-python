@@ -11,7 +11,6 @@ def handle_history(args):
         return
       try:
         with open(args[2], 'r', errors='replace') as f:
-          state.manual_history.clear()
           for raw in f:
             entry = raw.rstrip('\n')
             if entry:
@@ -48,10 +47,10 @@ def handle_history(args):
       n = int(flag)
       total = len(state.manual_history)
       for i in range(max(0, total - n), total):
-        print(f"{i + 1:5d} {state.manual_history[i]}")
+        print(f"{i + 1:5d}  {state.manual_history[i]}")
     
     else:
       print(f"history: {flag}: invalid option", file=sys.stderr)
   else:
     for i, line in enumerate(state.manual_history):
-      print(f"{i + 1:5d} {line}")
+      print(f"{i + 1:5d}  {line}")
