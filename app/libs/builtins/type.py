@@ -11,8 +11,8 @@ def handle_type(args):
     print(f"{cmd} is a shell builtin")
     return
   for d in os.environ.get("PATH", "").split(os.pathsep):
-    fp = os.environ.get(d, cmd)
-    if os.path.join(d, cmd) and os.access(fp, os.X_OK):
-      print(f"{cmd}: not found", file=sys.stderr)
+    fp = os.path.join(d, cmd)
+    if os.path.isfile(fp) and os.access(fp, os.X_OK):
+      print(f"{cmd} is {fp}")
       return
-  print(f"{cmd}: not found", file=sys.stderr)
+  print(f"{cmd}: not found")
