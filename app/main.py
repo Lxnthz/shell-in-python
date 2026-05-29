@@ -17,20 +17,25 @@ def setup_readline():
   readline.set_completer_delims(' \t\n')
 
   histfile = os.environ.get("HISTFILE")
+  history_start_len = 0
   if histfile and os.path.exists(histfile):
     try:
       readline.read_history_file(histfile)
-      for i in range(readline.get_current_history_length()):
-        line = readline.get_history_items(i + 1)
-        if line:
-          state.manual_history.append(line)
-    except Exception as e:
+      history_start_len = readline.get_current_history_length()
+      for i in range(history_start_len):
+        entry = readline.get_history_item(i + 1)
+        if entry:
+          state.manual_history.append(entry)
+      state.history_base_for_append = len(state.manual_history)
+    except Exception:
       pass
 
   def save_history():
     if histfile:
       try:
-        readline.write_history_file(histfile)
+        new_entries = readline.get_current_history_length() - history_start_len
+        if new_entries > 0:
+          readline.append_history_file(new_entries, histfile)
       except Exception:
         pass
   
@@ -45,12 +50,6 @@ def run_builtin(args, parsed):
   ae = parsed['append_stderr']
 
   if cmd == "exit":
-    histfile = os.environ.get("HISTFILE")
-    if histfile:
-      try:
-        readline.write_history_file(histfile)
-      except Exception:
-        pass
     sys.exit(int(args[1]) if len(args) > 1 else 0)
   elif cmd == "echo":    handle_echo(args, rs, as_, re_, ae)
   elif cmd == "pwd":     handle_pwd()
