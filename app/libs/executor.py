@@ -80,9 +80,12 @@ def execute_pipeline(command_str: str):
           os.dup2(fd, 2); os.close(fd)
 
         _run_in_child(args)
-      except Exception:
-        print(f"{args[0]}: command not found", file=sys.stderr)
-        os.exit(127)
+      except Exception as e:
+        if isinstance(e, FileNotFoundError):
+          print(f"{args[0]}: command not found", file=sys.stderr)
+        else:
+          print(f"Error: {e}", file=sys.stderr)
+        sys.exit(127)
     
     if prev_pipe is not None:
       os.close(prev_pipe)
@@ -100,11 +103,11 @@ def _run_in_child(args):
   dispatch = {
     "echo": lambda: (sys.stdout.write(' '.join(args[1:]) + '\n'), sys.exit(0)),
     "pwd": lambda: (handle_pwd(), sys.exit(0)),
-    "cd": lambda: (handle_pwd(), sys.exit(0)),
-    "type": lambda: (handle_type(), sys.exit(0)),
-    "history": lambda: (handle_history(), sys.exit(0)),
-    "declare": lambda: (handle_declare(), sys.exit(0)),
-    "jobs": lambda: (handle_jobs(), sys.exit(0)),
+    "cd": lambda: (handle_cd(args), sys.exit(0)),
+    "type": lambda: (handle_type(args), sys.exit(0)),
+    "history": lambda: (handle_history(args), sys.exit(0)),
+    "declare": lambda: (handle_declare(args), sys.exit(0)),
+    "jobs": lambda: (handle_jobs(args), sys.exit(0)),
     "exit": lambda: sys.exit(0),
   }
 
