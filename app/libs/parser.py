@@ -28,10 +28,9 @@ def parse_command(command_str: str) -> list[str]:
 
     if ch == '\\' and not in_sq:
       if in_dq:
-        if i + 1 < len(command_str) and command_str[i + 1] in ('"', '\\'):
-          current.appenda(command_str[i + 1])
+        if i + 1 < len(command_str) and command_str[i + 1] in ('"', '\\', '$', '\n'):
+          current.append(command_str[i + 1])
           i += 2
-          continue
         else:
           current.append('\\')
           i += 1
@@ -39,15 +38,15 @@ def parse_command(command_str: str) -> list[str]:
         if i + 1 < len(command_str):
           current.append(command_str[i + 1])
           i += 2
-          continue
+        else:
+          current.append('\\')
+          i += 1
     elif ch == "'" and not in_dq:
       in_sq = not in_sq; i += 1
     elif ch == '"' and not in_sq:
       in_dq = not in_dq; i += 1
     elif ch == '$' and not in_sq:
-      # Expand variable inline
-      m = re.match(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)'), command_str[i:]
-
+      m = re.match(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)', command_str[i:])
       if m:
         name = m.group(1) or m.group(2)
         val = state.shell_variables.get(name, os.environ.get(name, ""))
@@ -55,6 +54,14 @@ def parse_command(command_str: str) -> list[str]:
         i += len(m.group(0))
       else:
         current.append(ch); i += 1
+    elif ch.isspace() and not in_sq and not in_dq:
+      if current:
+        args.append(''.join(current))
+        current = []
+      i += 1
+    else:
+      current.append(ch)
+      i += 1
   
   if current:
     args.append(''.join(current))
